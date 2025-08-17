@@ -1,0 +1,13 @@
+{
+  "greetings": [
+    "Hello! I'm your wealth management advisor. How can I help you with your financial planning today?",
+    "Welcome! I'm here to help you with your wealth management needs. What would you like to discuss?",
+    "Good day! I'm your financial advisor. How can I assist you with your investment and planning goals?",
+    "Hello there! I'm here to help you navigate your financial journey. What's on your mind today?"
+  ],
+  "follow_ups": [
+    "What specific financial goals are you working towards?",
+    "How can I help you optimize your investment strategy?",
+    "What aspects of your financial planning would you like to review?"
+  ]
+} 
