@@ -16,11 +16,10 @@ const InteractiveAvatar: React.FC = () => {
   const [isListening, setIsListening] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [avatarState, setAvatarState] = useState<'idle' | 'talking' | 'listening'>('idle');
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [streamingResponse, setStreamingResponse] = useState<string>('');
-  const [currentUserMessage, setCurrentUserMessage] = useState<string>('');
+  const [streamingUserMessage, setStreamingUserMessage] = useState<string>('');
+  
   const wsRef = useRef<WebSocket | null>(null);
-  const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
     // Initialize WebSocket connection
@@ -50,7 +49,6 @@ const InteractiveAvatar: React.FC = () => {
   const handleWebSocketMessage = (data: any) => {
     switch (data.type) {
       case 'user_message':
-        // Add user message to chat
         const userMessage: Message = {
           id: Date.now().toString(),
           text: data.message,
@@ -58,20 +56,19 @@ const InteractiveAvatar: React.FC = () => {
           timestamp: new Date(data.timestamp * 1000)
         };
         setMessages(prev => [...prev, userMessage]);
+        setStreamingUserMessage('');
         break;
 
       case 'avatar_start':
         setAvatarState('talking');
-        setIsSpeaking(true);
         break;
 
       case 'avatar_chunk':
-        // Handle streaming chunks
+        // Add text to streaming response
         setStreamingResponse(prev => prev + data.chunk);
         break;
 
       case 'avatar_message':
-        // Final avatar message
         const avatarMessage: Message = {
           id: Date.now().toString(),
           text: data.message,
@@ -80,14 +77,10 @@ const InteractiveAvatar: React.FC = () => {
         };
         setMessages(prev => [...prev, avatarMessage]);
         setStreamingResponse('');
-        
-        // Speak the response
-        speakText(data.message);
         break;
 
       case 'avatar_end':
         setAvatarState('idle');
-        setIsSpeaking(false);
         break;
 
       case 'voice_started':
@@ -98,85 +91,66 @@ const InteractiveAvatar: React.FC = () => {
       case 'voice_stopped':
         setIsListening(false);
         setAvatarState('idle');
+        setStreamingUserMessage('');
         break;
     }
   };
 
-  const speakText = (text: string) => {
-    if ('speechSynthesis' in window) {
-      // Cancel any ongoing speech
-      if (speechRef.current) {
-        speechSynthesis.cancel();
-      }
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      speechRef.current = utterance;
-      
-      // Configure speech settings
-      utterance.rate = 0.85;
-      utterance.pitch = 1.1;
-      utterance.volume = 1.0;
-      
-      // Try to use a better voice
-      const voices = speechSynthesis.getVoices();
-      const preferredVoice = voices.find(voice => 
-        voice.name.includes('Google') || 
-        voice.name.includes('Microsoft') ||
-        voice.name.includes('Samantha')
-      );
-      if (preferredVoice) {
-        utterance.voice = preferredVoice;
-      }
-
-      utterance.onstart = () => {
-        setIsSpeaking(true);
-        setAvatarState('talking');
-      };
-
-      utterance.onend = () => {
-        setIsSpeaking(false);
-        setAvatarState('idle');
-      };
-
-      utterance.onerror = (event) => {
-        console.error('Speech synthesis error:', event);
-        setIsSpeaking(false);
-        setAvatarState('idle');
-      };
-
-      speechSynthesis.speak(utterance);
-    }
-  };
-
-  const sendMessage = (text: string) => {
+  const sendMessage = (message: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.error('❌ WebSocket not connected');
       return;
     }
 
+    console.log(' Sending message to backend:', message);
     wsRef.current.send(JSON.stringify({
       type: 'text',
-      message: text
+      message: message
     }));
   };
 
   const startVoiceChat = () => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.error('❌ WebSocket not connected');
       return;
     }
 
+    console.log('🎤 Starting voice chat');
     wsRef.current.send(JSON.stringify({
       type: 'voice_start'
     }));
+
+    // Trigger avatar introduction after a short delay
+    setTimeout(() => {
+      console.log('🎯 Triggering avatar introduction');
+      wsRef.current?.send(JSON.stringify({
+        type: 'text',
+        message: 'introduction_request'
+      }));
+    }, 1000); // 1 second delay
   };
 
   const stopVoiceChat = () => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.error('❌ WebSocket not connected');
       return;
     }
 
+    console.log('🛑 Stopping voice chat');
     wsRef.current.send(JSON.stringify({
       type: 'voice_stop'
     }));
+  };
+
+  const interruptVoiceChat = () => {
+    console.log('⏸️ Interrupting voice chat');
+    stopVoiceChat();
+  };
+
+  // Handle streaming transcription from voice chat
+  const handleStreamingTranscription = (text: string) => {
+    console.log(' Received streaming transcription:', text);
+    setStreamingUserMessage(text);
   };
 
   return (
@@ -209,16 +183,19 @@ const InteractiveAvatar: React.FC = () => {
           onSendMessage={sendMessage}
           onStartVoice={startVoiceChat}
           onStopVoice={stopVoiceChat}
+          onInterruptVoice={interruptVoiceChat}
+          onStreamingTranscription={handleStreamingTranscription}
           isListening={isListening}
           isConnected={isConnected}
-          isAvatarSpeaking={isSpeaking}
+          isAvatarSpeaking={false} // Always false since we removed audio
         />
       </div>
       
       <MessageHistory 
         messages={messages} 
         streamingResponse={streamingResponse}
-        isStreaming={streamingResponse.length > 0}
+        streamingUserMessage={streamingUserMessage}
+        isStreaming={streamingResponse.length > 0 || streamingUserMessage.length > 0}
       />
     </div>
   );

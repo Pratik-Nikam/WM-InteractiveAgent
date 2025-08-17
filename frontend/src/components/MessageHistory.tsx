@@ -11,15 +11,15 @@ interface Message {
 interface MessageHistoryProps {
   messages: Message[];
   streamingResponse?: string;
+  streamingUserMessage?: string;
   isStreaming?: boolean;
-  currentUserMessage?: string;
 }
 
 const MessageHistory: React.FC<MessageHistoryProps> = ({ 
   messages, 
   streamingResponse = '', 
-  isStreaming = false,
-  currentUserMessage = ''
+  streamingUserMessage = '',
+  isStreaming = false
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -29,7 +29,7 @@ const MessageHistory: React.FC<MessageHistoryProps> = ({
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, streamingResponse, currentUserMessage]);
+  }, [messages, streamingResponse, streamingUserMessage]);
 
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -38,7 +38,7 @@ const MessageHistory: React.FC<MessageHistoryProps> = ({
   return (
     <div className="h-64 bg-gradient-to-t from-gray-900 to-gray-800 border-t border-gray-700 overflow-hidden">
       <div className="h-full overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
-        {messages.length === 0 && !isStreaming && !currentUserMessage ? (
+        {messages.length === 0 && !isStreaming ? (
           <div className="text-center text-gray-400 py-8">
             <div className="mb-4">
               <svg className="w-12 h-12 mx-auto text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -76,24 +76,24 @@ const MessageHistory: React.FC<MessageHistoryProps> = ({
               </div>
             ))}
             
-            {/* Current user message (while speaking) */}
-            {currentUserMessage && (
+            {/* Streaming user message (while speaking) */}
+            {streamingUserMessage && (
               <div className="flex justify-end animate-fade-in">
                 <div className="max-w-xs lg:max-w-md px-4 py-3 rounded-2xl shadow-lg backdrop-blur-sm bg-gradient-to-r from-blue-600 to-blue-700 text-white">
                   <p className="text-sm leading-relaxed">
-                    {currentUserMessage}
+                    {streamingUserMessage}
                     <span className="animate-pulse">|</span>
                   </p>
                   <div className="flex items-center justify-between mt-2 text-xs text-blue-200">
                     <span>Now</span>
-                    <span className="ml-2">You</span>
+                    <span className="ml-2">You (Speaking...)</span>
                   </div>
                 </div>
               </div>
             )}
             
             {/* Streaming AI response */}
-            {isStreaming && streamingResponse && (
+            {streamingResponse && (
               <div className="flex justify-start animate-fade-in">
                 <div className="max-w-xs lg:max-w-md px-4 py-3 rounded-2xl shadow-lg backdrop-blur-sm bg-gradient-to-r from-gray-700 to-gray-800 text-white border border-gray-600/50">
                   <p className="text-sm leading-relaxed">
@@ -102,7 +102,7 @@ const MessageHistory: React.FC<MessageHistoryProps> = ({
                   </p>
                   <div className="flex items-center justify-between mt-2 text-xs text-gray-400">
                     <span>Now</span>
-                    <span className="ml-2">AI Advisor</span>
+                    <span className="ml-2">AI Advisor (Typing...)</span>
                   </div>
                 </div>
               </div>

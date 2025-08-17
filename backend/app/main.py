@@ -79,20 +79,95 @@ async def websocket_endpoint(websocket: WebSocket):
 async def process_text_message_streaming(message_data: Dict, websocket: WebSocket):
     """Process text message and send streaming response"""
     
-    user_message = message_data.get("message", "")
+    try:
+        user_message = message_data.get("message", "")
+        
+        # Check if this is an introduction request
+        if user_message == "introduction_request":
+            await send_avatar_introduction(websocket)
+            return
+        
+        # Send user message to chat
+        await manager.send_personal_message(
+            json.dumps({
+                "type": "user_message",
+                "message": user_message,
+                "timestamp": asyncio.get_event_loop().time()
+            }),
+            websocket
+        )
+        
+        # Get context from knowledge base
+        context = kb_service.get_context(user_message)
+        
+        # Start avatar response
+        await manager.send_personal_message(
+            json.dumps({
+                "type": "avatar_start",
+                "status": "talking"
+            }),
+            websocket
+        )
+        
+        # Generate streaming response
+        full_response = ""
+        async for chunk in ollama_service.generate_streaming_response(
+            user_message=user_message,
+            context=context
+        ):
+            full_response += chunk
+            # Send each chunk as it comes
+            await manager.send_personal_message(
+                json.dumps({
+                    "type": "avatar_chunk",
+                    "chunk": chunk,
+                    "is_streaming": True
+                }),
+                websocket
+            )
+        
+        # Send final avatar message
+        await manager.send_personal_message(
+            json.dumps({
+                "type": "avatar_message",
+                "message": full_response,
+                "timestamp": asyncio.get_event_loop().time()
+            }),
+            websocket
+        )
+        
+        # End avatar response
+        await manager.send_personal_message(
+            json.dumps({
+                "type": "avatar_end",
+                "status": "idle"
+            }),
+            websocket
+        )
+        
+    except Exception as e:
+        print(f"Error in process_text_message_streaming: {e}")
+        # Send error message to client
+        await manager.send_personal_message(
+            json.dumps({
+                "type": "avatar_message",
+                "message": "I'm sorry, there was an error processing your request. Please try again.",
+                "timestamp": asyncio.get_event_loop().time()
+            }),
+            websocket
+        )
+        await manager.send_personal_message(
+            json.dumps({
+                "type": "avatar_end",
+                "status": "idle"
+            }),
+            websocket
+        )
+
+async def send_avatar_introduction(websocket: WebSocket):
+    """Send avatar introduction message"""
     
-    # Send user message to chat
-    await manager.send_personal_message(
-        json.dumps({
-            "type": "user_message",
-            "message": user_message,
-            "timestamp": asyncio.get_event_loop().time()
-        }),
-        websocket
-    )
-    
-    # Get context from knowledge base
-    context = kb_service.get_context(user_message)
+    introduction_message = """Hey, my name is Max and I am a wealth management advisor. I can help you with onboarding tasks, KYC processes, investment planning, retirement strategies, and much more. How can I assist you today?"""
     
     # Start avatar response
     await manager.send_personal_message(
@@ -103,14 +178,15 @@ async def process_text_message_streaming(message_data: Dict, websocket: WebSocke
         websocket
     )
     
-    # Generate streaming response
+    # Send introduction in chunks for streaming effect
+    words = introduction_message.split()
     full_response = ""
-    async for chunk in ollama_service.generate_streaming_response(
-        user_message=user_message,
-        context=context
-    ):
+    
+    for i, word in enumerate(words):
+        chunk = word + " "
         full_response += chunk
-        # Send each chunk as it comes
+        
+        # Send each word as a chunk
         await manager.send_personal_message(
             json.dumps({
                 "type": "avatar_chunk",
@@ -119,12 +195,15 @@ async def process_text_message_streaming(message_data: Dict, websocket: WebSocke
             }),
             websocket
         )
+        
+        # Small delay for natural streaming effect
+        await asyncio.sleep(0.1)
     
     # Send final avatar message
     await manager.send_personal_message(
         json.dumps({
             "type": "avatar_message",
-            "message": full_response,
+            "message": full_response.strip(),
             "timestamp": asyncio.get_event_loop().time()
         }),
         websocket

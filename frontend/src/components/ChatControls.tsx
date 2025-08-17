@@ -4,6 +4,8 @@ interface ChatControlsProps {
   onSendMessage: (message: string) => void;
   onStartVoice: () => void;
   onStopVoice: () => void;
+  onStreamingTranscription: (text: string) => void;
+  onInterruptVoice: () => void;
   isListening: boolean;
   isConnected: boolean;
   isAvatarSpeaking: boolean;
@@ -13,6 +15,8 @@ const ChatControls: React.FC<ChatControlsProps> = ({
   onSendMessage,
   onStartVoice,
   onStopVoice,
+  onStreamingTranscription,
+  onInterruptVoice,
   isListening,
   isConnected,
   isAvatarSpeaking
@@ -21,7 +25,6 @@ const ChatControls: React.FC<ChatControlsProps> = ({
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [transcription, setTranscription] = useState('');
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [currentUserMessage, setCurrentUserMessage] = useState('');
   
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -40,8 +43,7 @@ const ChatControls: React.FC<ChatControlsProps> = ({
       recognition.onstart = () => {
         setIsTranscribing(true);
         setTranscription('');
-        setCurrentUserMessage('');
-        console.log('Speech recognition started');
+        console.log(' Speech recognition started');
       };
 
       recognition.onresult = (event) => {
@@ -59,7 +61,20 @@ const ChatControls: React.FC<ChatControlsProps> = ({
 
         const fullTranscript = finalTranscript + interimTranscript;
         setTranscription(fullTranscript);
-        setCurrentUserMessage(fullTranscript);
+        
+        // Check for stop commands
+        const lowerTranscript = fullTranscript.toLowerCase();
+        if (lowerTranscript.includes('stop') || lowerTranscript.includes('stop listening') || lowerTranscript.includes('stop voice chat')) {
+          console.log('🎯 Voice command detected: stop');
+          stopVoiceChat();
+          return;
+        }
+        
+        // Show streaming transcription for interim results
+        if (interimTranscript.trim()) {
+          console.log('🔄 Streaming transcription:', fullTranscript);
+          onStreamingTranscription(fullTranscript);
+        }
 
         // Clear previous timeout and set new one
         if (silenceTimeoutRef.current) {
@@ -68,11 +83,12 @@ const ChatControls: React.FC<ChatControlsProps> = ({
 
         // If we have a final transcript, set timeout to send after 3 seconds of silence
         if (finalTranscript.trim()) {
+          console.log('⏰ Setting 3s timeout for:', finalTranscript.trim());
           silenceTimeoutRef.current = setTimeout(() => {
             if (finalTranscript.trim()) {
+              console.log(' Sending message to backend after 3s silence:', finalTranscript.trim());
               onSendMessage(finalTranscript.trim());
-              setTranscription('');
-              setCurrentUserMessage('');
+              setTranscription(''); // Only clear the input field
             }
           }, 3000); // 3 seconds of silence
         }
@@ -80,10 +96,11 @@ const ChatControls: React.FC<ChatControlsProps> = ({
 
       recognition.onend = () => {
         setIsTranscribing(false);
-        if (isVoiceActive && !isAvatarSpeaking) {
-          // Restart recognition if voice is still active and avatar isn't speaking
+        // Restart recognition if voice is still active
+        if (isVoiceActive) {
+          console.log('🔄 Restarting recognition');
           setTimeout(() => {
-            if (isVoiceActive && !isAvatarSpeaking) {
+            if (isVoiceActive) {
               recognition.start();
             }
           }, 100);
@@ -95,7 +112,7 @@ const ChatControls: React.FC<ChatControlsProps> = ({
         setIsTranscribing(false);
       };
     }
-  }, [isVoiceActive, isAvatarSpeaking, onSendMessage]);
+  }, [isVoiceActive, onSendMessage, onStreamingTranscription]);
 
   const handleSendMessage = () => {
     if (message.trim() && isConnected) {
@@ -112,7 +129,7 @@ const ChatControls: React.FC<ChatControlsProps> = ({
   };
 
   const startVoiceChat = async () => {
-    if (!isConnected || isAvatarSpeaking) return;
+    if (!isConnected) return;
 
     try {
       // Request microphone permission
@@ -126,7 +143,7 @@ const ChatControls: React.FC<ChatControlsProps> = ({
         recognitionRef.current.start();
       }
 
-      console.log('Voice chat started - listening continuously');
+      console.log(' Voice chat started - listening continuously');
     } catch (error) {
       console.error('Error starting voice chat:', error);
       alert('Please allow microphone access to use voice chat');
@@ -136,7 +153,6 @@ const ChatControls: React.FC<ChatControlsProps> = ({
   const stopVoiceChat = () => {
     setIsVoiceActive(false);
     setTranscription('');
-    setCurrentUserMessage('');
     setIsTranscribing(false);
     
     // Clear any pending timeout
@@ -149,7 +165,22 @@ const ChatControls: React.FC<ChatControlsProps> = ({
     }
     
     onStopVoice();
-    console.log('Voice chat stopped');
+    console.log(' Voice chat stopped');
+  };
+
+  const interruptVoiceChat = () => {
+    console.log('⏸️ Interrupting voice chat');
+    
+    // Clear any pending timeouts
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+    }
+    
+    // Stop voice chat
+    stopVoiceChat();
+    
+    // Notify parent component
+    onInterruptVoice();
   };
 
   // Cleanup timeout on unmount
@@ -208,12 +239,13 @@ const ChatControls: React.FC<ChatControlsProps> = ({
           </div>
         </div>
 
-        {/* Voice Chat Button */}
-        <div className="flex justify-center">
+        {/* Voice Chat Controls */}
+        <div className="flex justify-center space-x-4">
+          {/* Start/Stop Voice Chat Button */}
           <button
             onClick={isVoiceActive ? stopVoiceChat : startVoiceChat}
-            disabled={!isConnected || isAvatarSpeaking}
-            className={`relative px-8 py-4 rounded-2xl font-semibold transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl ${
+            disabled={!isConnected}
+            className={`relative px-6 py-4 rounded-2xl font-semibold transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl ${
               isVoiceActive
                 ? 'bg-gradient-to-r from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700'
                 : 'bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700'
@@ -225,7 +257,7 @@ const ChatControls: React.FC<ChatControlsProps> = ({
                   <div className="w-4 h-4 bg-white rounded-full animate-pulse"></div>
                   <div className="absolute inset-0 w-4 h-4 bg-white rounded-full animate-ping"></div>
                 </div>
-                <span>Stop Voice Chat</span>
+                <span>Stop Listening</span>
               </div>
             ) : (
               <div className="flex items-center space-x-3">
@@ -256,10 +288,10 @@ const ChatControls: React.FC<ChatControlsProps> = ({
             <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
           </div>
 
-          {isAvatarSpeaking && (
-            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full text-sm font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30">
-              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
-              <span>AI Speaking</span>
+          {isVoiceActive && (
+            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full text-sm font-medium bg-red-500/20 text-red-300 border border-red-500/30">
+              <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>
+              <span>Listening</span>
             </div>
           )}
         </div>

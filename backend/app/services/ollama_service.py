@@ -2,6 +2,7 @@ import httpx
 from typing import Optional, AsyncGenerator
 from config.settings import settings
 import json
+import asyncio
 
 class OllamaService:
     def __init__(self):
@@ -17,28 +18,37 @@ class OllamaService:
     ) -> str:
         """Generate response using Ollama"""
         
-        # Build the prompt with context
-        prompt = self._build_prompt(user_message, context)
-        
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/api/generate",
-                json={
-                    "model": self.model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": self.temperature,
-                        "num_predict": self.max_tokens
-                    }
-                }
-            )
+        try:
+            # Build the prompt with context
+            prompt = self._build_prompt(user_message, context)
             
-            if response.status_code == 200:
-                result = response.json()
-                return result.get("response", "I'm sorry, I couldn't generate a response.")
-            else:
-                return "I'm sorry, there was an error processing your request."
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/api/generate",
+                    json={
+                        "model": self.model,
+                        "prompt": prompt,
+                        "stream": False,
+                        "options": {
+                            "temperature": self.temperature,
+                            "num_predict": self.max_tokens
+                        }
+                    }
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    return result.get("response", "I'm sorry, I couldn't generate a response.")
+                else:
+                    return f"I'm sorry, there was an error processing your request. Status: {response.status_code}"
+                    
+        except httpx.ConnectError:
+            return "I'm sorry, I cannot connect to the AI service. Please make sure Ollama is running on your system. You can install it from https://ollama.ai/"
+        except httpx.TimeoutException:
+            return "I'm sorry, the request timed out. Please try again."
+        except Exception as e:
+            print(f"Error in generate_response: {e}")
+            return "I'm sorry, there was an unexpected error. Please try again."
 
     async def generate_streaming_response(
         self, 
@@ -47,34 +57,43 @@ class OllamaService:
     ) -> AsyncGenerator[str, None]:
         """Generate streaming response using Ollama"""
         
-        # Build the prompt with context
-        prompt = self._build_prompt(user_message, context)
-        
-        async with httpx.AsyncClient() as client:
-            async with client.stream(
-                "POST",
-                f"{self.base_url}/api/generate",
-                json={
-                    "model": self.model,
-                    "prompt": prompt,
-                    "stream": True,
-                    "options": {
-                        "temperature": self.temperature,
-                        "num_predict": self.max_tokens
+        try:
+            # Build the prompt with context
+            prompt = self._build_prompt(user_message, context)
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                async with client.stream(
+                    "POST",
+                    f"{self.base_url}/api/generate",
+                    json={
+                        "model": self.model,
+                        "prompt": prompt,
+                        "stream": True,
+                        "options": {
+                            "temperature": self.temperature,
+                            "num_predict": self.max_tokens
+                        }
                     }
-                }
-            ) as response:
-                if response.status_code == 200:
-                    async for line in response.aiter_lines():
-                        if line.strip():
-                            try:
-                                data = json.loads(line)
-                                if "response" in data:
-                                    yield data["response"]
-                            except json.JSONDecodeError:
-                                continue
-                else:
-                    yield "I'm sorry, there was an error processing your request."
+                ) as response:
+                    if response.status_code == 200:
+                        async for line in response.aiter_lines():
+                            if line.strip():
+                                try:
+                                    data = json.loads(line)
+                                    if "response" in data:
+                                        yield data["response"]
+                                except json.JSONDecodeError:
+                                    continue
+                    else:
+                        yield f"I'm sorry, there was an error processing your request. Status: {response.status_code}"
+                        
+        except httpx.ConnectError:
+            yield "I'm sorry, I cannot connect to the AI service. Please make sure Ollama is running on your system. You can install it from https://ollama.ai/"
+        except httpx.TimeoutException:
+            yield "I'm sorry, the request timed out. Please try again."
+        except Exception as e:
+            print(f"Error in generate_streaming_response: {e}")
+            yield "I'm sorry, there was an unexpected error. Please try again."
 
     def _build_prompt(self, user_message: str, context: Optional[str] = None) -> str:
         """Build the prompt with system context and user message"""
